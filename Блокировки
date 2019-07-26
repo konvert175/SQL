@@ -1,0 +1,67 @@
+
+
+SELECT	CASE	transaction_isolation_level 
+		WHEN 0 THEN 'Unspecified' 
+		WHEN 1 THEN 'ReadUncomitted' 
+		WHEN 2 THEN 'ReadComitted' 
+		WHEN 3 THEN 'Repeatable' 
+		WHEN 4 THEN 'Serializable' 
+		WHEN 5 THEN 'Snapshot'
+		END	AS TIL
+FROM	sys.dm_exec_sessions
+WHERE	session_id = @@SPID
+
+--ReadComitted
+drop table if exists test_tab
+create table test_tab (id int identity(1,1),val int)
+declare  @i int=0
+WHILE   @i <= 100000
+BEGIN
+    insert into test_tab values (@i+10); 
+    SET     @i +=1;
+END
+
+select * from test_tab
+
+begin tran
+update test_tab
+set val = val+11
+--пока не произойдет фиксация транзакции - все остальные будут ждать (select,delete и даже insert)
+commit
+
+begin tran
+ insert into test_tab values(111)
+ --пока не произойдет фиксация транзакции 
+ -- все остальные будут ждать 
+ --select (при том select * часть записей вернет, залоченные будет ждать,
+ --delete будет ждать, 
+ --insert выполнится)
+ --update для одной строки будет ждать
+ commit
+
+ begin tran
+ delete from test_tab where id = 7
+  --пока не произойдет фиксация транзакции 
+ -- все остальные будут ждать 
+ --select будет,
+ --delete будет ждать, 
+ --insert выполнится!
+ --update для одной строки будет ждать
+ commit
+
+ begin tran
+update test_tab
+set val = val+11
+where ID=10
+ --пока не произойдет фиксация транзакции 
+ -- все остальные будут ждать 
+ --select будет,
+ --delete будет ждать (даже для строк которых нет), 
+ --insert выполнится!
+ --update для одной строки будет ждать  (даже для строк которых нет)
+commit
+
+ begin tran
+select * from test_tab
+--select никого не блокирует
+commit
